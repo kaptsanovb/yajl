@@ -1,0 +1,9 @@
+**
+!.gitignore
+!README.md
+!LICENSE
+!Makefile
+!src/
+!src/**
+!lib/
+!lib/**
