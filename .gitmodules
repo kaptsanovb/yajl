@@ -1,3 +1,0 @@
-[submodule "lib/hashmap"]
-	path = lib/hashmap
-	url = https://github.com/DavidLeeds/hashmap.git

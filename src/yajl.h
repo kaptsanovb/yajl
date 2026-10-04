@@ -1,9 +1,9 @@
 #include <stdio.h>
+#include <stddef.h>
 #include <stdint.h>
+#include <stdbool.h>
 #include <string.h>
 #include <stdarg.h>
-
-#include "../lib/hashmap/include/hashmap.h"
 
 
 typedef struct {} null;
@@ -243,86 +243,122 @@ int _yajl_parse_union(
 	}
 
 
-typedef struct Field {
-	size_t offset;
-	size_t data_offset;
-	int (*parse)(char **, void *);
-	int (*serialise)(CharStack *, void *);
-	bool optional;
-} Field;
-
-typedef HASHMAP(char, Field) FieldMap;
-
-int _yajl_parse_struct(char **inputptr, void *out, FieldMap *map);
-
-int _yajl_serialise_struct(CharStack *outputptr, void *in, FieldMap *map);
+int _yajl_parse_struct(char **inputptr, void *out, int (*)(char **, char *, void *));
 
 #define _OPTIONAL_FIELD_YES(type, name) struct { bool found; type data; } name
 #define _OPTIONAL_FIELD_NO(type, name) type name
 #define _FIELD(acc, x) acc __FIELD x;
 #define __FIELD(type, name, optional)\
 	CAT(_OPTIONAL_FIELD_, optional)(type, name)
+
 #define _SND(a, b, ...) b
 #define _THD(a, b, c, ...) c
 #define CAT(a, b) _CAT(a, b)
 #define _CAT(a, b) a##b
 #define STR(a) _STR(a)
 #define _STR(a) #a
-#define _FIELDMAP_VALUE(acc, x)\
-	(\
-		_UEF_FST acc\
-		__FIELDMAP_VALUE(_UEF_SND acc, _UEF_FST x, _UEF_SND x, _THD x)\
-	,\
-		_UEF_SND acc\
-	)
-#define _OPTIONAL_NO  0
-#define _OPTIONAL_YES 1
-#define _OPTIONAL_OFFSET_YES .data
-#define _OPTIONAL_OFFSET_NO
-#define __FIELDMAP_VALUE(name, field_type, field_name, is_optional)\
-	CAT(field_, name) = malloc(sizeof(Field));\
-	*CAT(field_, name) = ((Field){\
-		.offset = offsetof(struct name, field_name),\
-		.data_offset = offsetof(\
-			struct name,\
-			field_name CAT(_OPTIONAL_OFFSET_, is_optional)\
-		),\
-		.parse = (int (*)(char **, void *))CAT(yajl_parse_, field_type),\
-		.serialise = (int (*)(CharStack *, void *))CAT(yajl_serialise_, field_type),\
-		.optional = CAT(_OPTIONAL_, is_optional)\
-	});\
-	hashmap_put(\
-		CAT(field_map_, name),\
-		STR(field_name),\
-		CAT(field_, name)\
-	);
+
+#define _CLEAR_FOUND(acc, x) acc __CLEAR_FOUND x
+#define __CLEAR_FOUND_NO(field_name)
+#define __CLEAR_FOUND_YES(field_name) out->field_name.found = false;
+#define __CLEAR_FOUND(field_type, field_name, is_optional)\
+	CAT(__CLEAR_FOUND_, is_optional)(field_name)
+
+#define _FIELD_PARSE(acc, x) acc __FIELD_PARSE x
+#define _OPTIONAL_NO(field) field
+#define _OPTIONAL_YES(field) field.data
+#define _OPTIONAL_FOUND_NO(field)
+#define _OPTIONAL_FOUND_YES(field) field.found = true;
+#define __FIELD_PARSE(field_type, field_name, is_optional)\
+	if (strcmp(field, STR(field_name)) == 0) {\
+		if (\
+			CAT(yajl_parse_, field_type)(\
+				inputptr,\
+				&CAT(_OPTIONAL_, is_optional)(out->field_name)\
+			) < 0\
+		)\
+			return -1;\
+		\
+		CAT(_OPTIONAL_FOUND_, is_optional)(out->field_name)\
+	} else
+
 #define _FIELD_FREE(acc, x) acc CAT(__FIELD_FREE_, _THD x) x
 #define __FIELD_FREE_YES(field_type, field_name, optional)\
 	if (x->field_name.found)\
 		yajl_free_##field_type(&x->field_name.data);
 #define __FIELD_FREE_NO(field_type, field_name, optional)\
 	yajl_free_##field_type(&x->field_name);
+
+#define _ADD_COMMA(...)\
+	__VA_ARGS__ __VA_OPT__(if (char_stack_pushc(outputptr, ',') < 0) return -1;)
+#define _FIELD_SERIALISE(acc, x)\
+	__FIELD_SERIALISE(acc, _UEF_FST x, _UEF_SND x, _THD x)
+#define __FIELD_SERIALISE_OPEN_NO(field_name)
+#define __FIELD_SERIALISE_OPEN_YES(field_name)\
+	if (in->field_name.found) {
+#define __FIELD_SERIALISE_CLOSE_NO(field_name)
+#define __FIELD_SERIALISE_CLOSE_YES(field_name)\
+	}
+#define __FIELD_SERIALISE(acc, field_type, field_name, is_optional)\
+	acc\
+	CAT(__FIELD_SERIALISE_OPEN_, is_optional)(field_name)\
+	\
+	_ADD_COMMA(acc)\
+	\
+	x = STR(field_name);\
+	if (yajl_serialise_string(outputptr, &x) < 0)\
+		return -2;\
+	\
+	if (char_stack_pushc(outputptr, ':') < 0)\
+		return -3;\
+	\
+	if (\
+		CAT(yajl_serialise_, field_type)(\
+			outputptr,\
+			CAT(_OPTIONAL_, is_optional)(&in->field_name)\
+		) < 0\
+	)\
+		return -4;\
+	\
+	CAT(__FIELD_SERIALISE_CLOSE_, is_optional)(field_name)
+
 #define YAJL_STRUCT_DEFS(name, do_typedef, ...)\
 	_DO_TYPEDEF_##do_typedef(\
 		name,\
 		struct name { FOLDL(_FIELD, , __VA_ARGS__) }\
 	);\
+	\
+	int _yajl_parse_##name##_field (\
+		char **inputptr,\
+		char *field,\
+		struct name *out\
+	) {\
+		EVAL1(FIRST FOLDL(_FIELD_PARSE, (, p, m), __VA_ARGS__)) /*else*/\
+			return -2;\
+		\
+		return 0;\
+	}\
+	\
 	int yajl_parse_##name(char **inputptr, struct name *out) {\
-		/* TODO: preprocess this!!!! */\
-		FieldMap *field_map_##name = malloc(sizeof(FieldMap));\
-		hashmap_init(field_map_##name, hashmap_hash_string, strcmp);\
-		Field *field_##name;\
-		EVAL1(FIRST FOLDL(_FIELDMAP_VALUE, (, name), __VA_ARGS__))\
-		return _yajl_parse_struct(inputptr, out, field_map_##name);\
+		FOLDL(_CLEAR_FOUND, , __VA_ARGS__)\
+		return _yajl_parse_struct(\
+			inputptr,\
+			out,\
+			(int (*)(char **, char *, void *))_yajl_parse_##name##_field\
+		);\
 	}\
 	\
 	int yajl_serialise_##name(CharStack *outputptr, struct name *in) {\
-		/* TODO: preprocess this!!!! */\
-		FieldMap *field_map_##name = malloc(sizeof(FieldMap));\
-		hashmap_init(field_map_##name, hashmap_hash_string, strcmp);\
-		Field *field_##name;\
-		EVAL1(FIRST FOLDL(_FIELDMAP_VALUE, (, name), __VA_ARGS__))\
-		return _yajl_serialise_struct(outputptr, in, field_map_##name);\
+		if (char_stack_pushc(outputptr, '{') < 0)\
+			return -1;\
+		\
+		const char *x;\
+		FOLDL(_FIELD_SERIALISE, , __VA_ARGS__)\
+		\
+		if (char_stack_pushc(outputptr, '}') < 0)\
+			return -5;\
+		\
+		return 0;\
 	}\
 	\
 	void yajl_free_##name(struct name *x) {\

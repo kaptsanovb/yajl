@@ -431,25 +431,15 @@ int _yajl_parse_union(
 }
 
 
-int _yajl_struct_field_check(void *out, Field *field) {
-	if (!field->optional)
-		return -1;
-
-	*(((bool *)out) + field->offset) = false;
-	return 0;
-}
-
-
-int _yajl_parse_struct(char **inputptr, void *out, FieldMap *map) {
+int _yajl_parse_struct(char **inputptr, void *out, int (*parse_field)(char **, char *, void *)) {
 	char *start = *inputptr;
 
 	if (read_given_char(inputptr, '{') < 0)
 		return -1;
 
 	char *s;
-	Field *field;
-	while (yajl_parse_string(inputptr, &s) >= 0) {
-		if ((field = hashmap_get(map, s)) == NULL) {
+	do {
+		if (yajl_parse_string(inputptr, &s) < 0) {
 			*inputptr = start;
 			return -2;
 		}
@@ -459,75 +449,16 @@ int _yajl_parse_struct(char **inputptr, void *out, FieldMap *map) {
 			return -3;
 		}
 
-		if ((*field->parse)(inputptr, ((char *)out) + field->data_offset) < 0) {
+		if ((*parse_field)(inputptr, s, out) < 0) {
 			*inputptr = start;
 			return -4;
 		}
-
-		if (field->optional)
-			*(((bool *)out) + field->offset) = true;
-
-		hashmap_remove(map, s);
-
-		if (read_given_char(inputptr, ',') < 0)
-			break;
-	}
+	} while (read_given_char(inputptr, ',') >= 0);
 
 	if (read_given_char(inputptr, '}') < 0) {
 		*inputptr = start;
 		return -5;
 	}
-
-	hashmap_foreach_data(field, map) {
-		if (_yajl_struct_field_check(out, field) < 0)
-			return -6;
-	}
-
-	return 0;
-}
-
-
-int _yajl_serialise_struct_field(
-	CharStack *outputptr,
-	void *in,
-	const char *key,
-	Field *field,
-	bool first
-) {
-	if (field->optional && !(bool)*((char *)in + field->offset))
-		return 0;
-
-	if (!first && char_stack_pushc(outputptr, ',') < 0)
-		return -1;
-
-	if (yajl_serialise_string(outputptr, &key) < 0)
-		return -2;
-
-	if (char_stack_pushc(outputptr, ':') < 0)
-		return -3;
-
-	if ((*field->serialise)(outputptr, (char *)in + field->data_offset) < 0)
-		return -4;
-
-	return 0;
-}
-
-int _yajl_serialise_struct(CharStack *outputptr, void *in, FieldMap *map) {
-	if (char_stack_pushc(outputptr, '{'))
-		return -1;
-
-	const char *key;
-	Field *field;
-	bool first = true;
-	hashmap_foreach(key, field, map) {
-		if (_yajl_serialise_struct_field(outputptr, in, key, field, first) < 0)
-			return -2;
-
-		first = false;
-	}
-
-	if (char_stack_pushc(outputptr, '}'))
-		return -2;
 
 	return 0;
 }
