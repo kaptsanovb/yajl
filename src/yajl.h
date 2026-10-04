@@ -31,14 +31,14 @@ int yajl_parse_null    (char **inputptr, null       *out);
 int yajl_serialise_int     (CharStack *outputptr, int        *in);
 int yajl_serialise_float   (CharStack *outputptr, float      *in);
 int yajl_serialise_bool    (CharStack *outputptr, bool       *in);
-int yajl_serialise_string  (CharStack *outputptr, const char **in);
+int yajl_serialise_string  (CharStack *outputptr, char **in);
 int yajl_serialise_null    (CharStack *outputptr, null       *in);
 
 void yajl_free_null  (null        *x);
 void yajl_free_int   (int         *x);
 void yajl_free_float (float       *x);
 void yajl_free_bool  (bool        *x);
-void yajl_free_string(const char **x);
+void yajl_free_string(char **x);
 
 
 // Thank you johnathan heathcote: http://jhnet.co.uk/articles/cpp_magic
@@ -336,7 +336,7 @@ int _yajl_parse_struct(
 	yajl_free_##field_type(&x->field_name);
 
 #define _ADD_COMMA(...)\
-	__VA_OPT__()
+	__VA_OPT__(,)
 #define _FIELD_SERIALISE(acc, x)\
 	__FIELD_SERIALISE(acc, _UEF_FST x, _UEF_SND x, _THD x)
 #define __FIELD_SERIALISE_OPEN_NO(field_name)
@@ -370,7 +370,16 @@ int _yajl_parse_struct(
 	\
 	CAT(__FIELD_SERIALISE_CLOSE_, is_optional)(field_name)
 
-#define YAJL_STRUCT_DEFS(name, ...)\
+#define _EXTEND(acc, name) acc _ADD_COMMA(acc) YAJL_FIELDS_##name
+
+#define YAJL_STRUCT_DEFS(name, extends)\
+	_YAJL_STRUCT_DEFS(\
+		name,\
+		YAJL_FIELDS_##name,\
+		FOLDL(_EXTEND, , _UEF_EVAL extends)\
+	)
+
+#define _YAJL_STRUCT_DEFS(name, ...)\
 	typedef struct name { FOLDL(_FIELD, , __VA_ARGS__) } name;\
 	\
 	char _yajl_##name##_field_checks[FOLDL(_COUNT, 0, __VA_ARGS__)];\
@@ -410,7 +419,7 @@ int _yajl_parse_struct(
 		if (char_stack_pushc(outputptr, '{') < 0)\
 			return -1;\
 		\
-		const char *x;\
+		char *x;\
 		bool first = true;\
 		FOLDL(_FIELD_SERIALISE, , __VA_ARGS__)\
 		\

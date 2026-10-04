@@ -246,7 +246,7 @@ int yajl_serialise_bool(CharStack *outputptr, bool *in) {
 	return 0;
 }
 
-int yajl_serialise_string(CharStack *outputptr, const char **in) {
+int yajl_serialise_string(CharStack *outputptr, char **in) {
 	if (char_stack_pushc(outputptr, '"') < 0)
 		return -1;
 
@@ -276,7 +276,7 @@ inline void yajl_free_bool(bool *x) {
 	UNUSED(x);
 }
 
-inline void yajl_free_string(const char **x) {
+inline void yajl_free_string(char **x) {
 	UNUSED(x);
 }
 
