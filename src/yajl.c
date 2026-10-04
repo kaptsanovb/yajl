@@ -8,6 +8,15 @@
 #define UNUSED(x) (void)(x)
 
 
+unsigned int string_hash(char *s) {
+	unsigned int hash = 0;
+	for (int i = 0; s[i] != '\0'; ++i) {
+		hash = hash * 31 + s[i];
+	}
+	return hash;
+}
+
+
 // Reading helpers
 
 int skip_whitespace(char **inputptr) {
@@ -137,10 +146,11 @@ int char_stack_snprintf(CharStack *stack, size_t maxn, char *format, ...) {
 
 // INIT
 
+
 size_t max_len_int;
 size_t max_len_float;
 
-void yajl_init() {
+__attribute__((constructor)) void _yajl_init() {
 	max_len_int   = snprintf(NULL, 0, "%d", INT_MIN);
 	max_len_float = snprintf(NULL, 0, "%e", FLT_MIN);
 }
@@ -350,68 +360,6 @@ int _yajl_parse_array(
 	return 0;
 }
 
-int _yajl_serialise_array(
-	CharStack *outputptr,
-	void *in,
-	int (*serialise)(CharStack *, void *),
-	int dims,
-	size_t elem_size
-) {
-	int dim = -1;
-	size_t i = 0;
-	size_t *dimsize = in;
-	size_t dimi[dims];
-	char *data = *(char **)(in + dims * sizeof(size_t));
-
-	array_start:
-	if (char_stack_pushc(outputptr, '[') < 0)
-		return -1;
-
-	++dim;
-	dimi[dim] = 0;
-
-	if (dim < dims - 1)
-		goto array_start;
-	else
-		goto value;
-
-	value:
-	if (dimi[dim] >= dimsize[dim])
-		goto array_end;
-
-	if (dimi[dim] != 0 && char_stack_pushc(outputptr, ',') < 0)
-		return -2;
-
-	if ((*serialise)(outputptr, data + elem_size * i) < 0)
-		return -3;
-
-	++dimi[dim];
-	++i;
-
-	goto value;
-
-	array_end:
-	if (char_stack_pushc(outputptr, ']') < 0)
-		return -4;
-
-	--dim;
-	if (dim == -1)
-		goto finish;
-
-	++dimi[dim];
-	if (dimi[dim] >= dimsize[dim])
-		goto array_end;
-	else {
-		if (char_stack_pushc(outputptr, ',') < 0)
-			return -5;
-
-		goto array_start;
-	}
-
-	finish:
-	return 0;
-}
-
 
 int _yajl_parse_union(
 	char **inputptr,
@@ -431,13 +379,21 @@ int _yajl_parse_union(
 }
 
 
-int _yajl_parse_struct(char **inputptr, void *out, int (*parse_field)(char **, char *, void *)) {
+int _yajl_parse_struct(
+	char **inputptr,
+	void *out,
+	int (*field_parsers[])(char **, char *, void *),
+	size_t size
+) {
 	char *start = *inputptr;
 
 	if (read_given_char(inputptr, '{') < 0)
 		return -1;
 
 	char *s;
+	int n;
+	int start_n;
+	bool first;
 	do {
 		if (yajl_parse_string(inputptr, &s) < 0) {
 			*inputptr = start;
@@ -449,15 +405,36 @@ int _yajl_parse_struct(char **inputptr, void *out, int (*parse_field)(char **, c
 			return -3;
 		}
 
-		if ((*parse_field)(inputptr, s, out) < 0) {
-			*inputptr = start;
+		start_n = string_hash(s) % size;
+		n = start_n;
+		first = true;
+
+		field_parser_select:
+		if (!first && n == start_n)
 			return -4;
+
+		first = false;
+		while (field_parsers[n] == NULL) {
+			n = (n + 1) % size;
+			goto field_parser_select;
+		}
+
+		switch ((*field_parsers[n])(inputptr, s, out)) {
+			case -1:
+				return -5;
+
+			case -2:
+				n = (n + 1) % size;
+				goto field_parser_select;
+
+			default:
+				break;
 		}
 	} while (read_given_char(inputptr, ',') >= 0);
 
 	if (read_given_char(inputptr, '}') < 0) {
 		*inputptr = start;
-		return -5;
+		return -6;
 	}
 
 	return 0;
