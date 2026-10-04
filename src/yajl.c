@@ -382,13 +382,16 @@ int _yajl_parse_union(
 int _yajl_parse_struct(
 	char **inputptr,
 	void *out,
-	int (*field_parsers[])(char **, char *, void *),
+	int (*field_parsers[])(char **, char *, int, void *),
 	size_t size
 ) {
 	char *start = *inputptr;
 
 	if (read_given_char(inputptr, '{') < 0)
 		return -1;
+
+	if (read_given_char(inputptr, '}') >= 0)
+		return 0;
 
 	char *s;
 	int n;
@@ -419,7 +422,7 @@ int _yajl_parse_struct(
 			goto field_parser_select;
 		}
 
-		switch ((*field_parsers[n])(inputptr, s, out)) {
+		switch ((*field_parsers[n])(inputptr, s, n, out)) {
 			case -1:
 				return -5;
 

@@ -252,7 +252,7 @@ unsigned int string_hash(char *s);
 int _yajl_parse_struct(
 	char **inputptr,
 	void *out,
-	int (*field_parsers[])(char **, char *, void *),
+	int (*field_parsers[])(char **, char *, int, void *),
 	size_t size
 );
 
@@ -278,17 +278,20 @@ int _yajl_parse_struct(
 #define _FIELD_PARSE_MAP(acc, x)\
 	(\
 		_UEF_FST acc\
-		__FIELD_PARSE_MAP(_SND acc, _THD acc, _UEF_FST x, _SND x)\
+		__FIELD_PARSE_MAP(_SND acc, _THD acc, _UEF_FST x, _SND x, _THD x)\
 	,\
 		_SND acc\
 	,\
 		_THD acc\
 	)
-#define __FIELD_PARSE_MAP(name, size, field_type, field_name)\
+#define _OPTIONAL_BIT_NO
+#define _OPTIONAL_BIT_YES 0b010 |
+#define __FIELD_PARSE_MAP(name, size, field_type, field_name, is_optional)\
 	n = string_hash(STR(field_name)) % size;\
 	while (CAT3(_yajl_, name, _field_parsers[n]) != NULL)\
 		n = (n + 1) % size;\
-	CAT3(_yajl_, name, _field_parsers[n]) = (int (*)(char **, char *, void *))CAT4(_yajl_parse_, name, _, field_name);
+	CAT3(_yajl_, name, _field_parsers[n]) = (int (*)(char **, char *, int, void *))CAT4(_yajl_parse_, name, _, field_name);\
+	CAT3(_yajl_, name, _field_checks[n]) = CAT(_OPTIONAL_BIT_, is_optional) 0b100;
 
 #define _FIELD_PARSE(acc, x)\
 	(\
@@ -305,6 +308,7 @@ int _yajl_parse_struct(
 	int CAT4(_yajl_parse_, name, _, field_name)(\
 		char **inputptr,\
 		char *field,\
+		int n,\
 		struct name *out\
 	) {\
 		if (strcmp(field, STR(field_name)) == 0) {\
@@ -316,6 +320,7 @@ int _yajl_parse_struct(
 			)\
 				return -1;\
 			\
+			CAT3(_yajl_, name, _field_checks[n]) |= 0b001;\
 			CAT(_OPTIONAL_FOUND_, is_optional)(out->field_name)\
 			return 0;\
 		}\
@@ -368,25 +373,37 @@ int _yajl_parse_struct(
 #define YAJL_STRUCT_DEFS(name, ...)\
 	typedef struct name { FOLDL(_FIELD, , __VA_ARGS__) } name;\
 	\
+	char _yajl_##name##_field_checks[FOLDL(_COUNT, 0, __VA_ARGS__)];\
+	int (*_yajl_##name##_field_parsers[sizeof(_yajl_##name##_field_checks)])(char **, char *, int, void *);\
 	EVAL1(FIRST FOLDL(_FIELD_PARSE, (, name), __VA_ARGS__))\
-	int (*_yajl_##name##_field_parsers[FOLDL(_COUNT, 0, __VA_ARGS__)])(char **, char *, void *) = { };\
 	__attribute__((constructor)) void _yajl_##name##_init() {\
 		int n;\
 		EVAL1(FIRST FOLDL(\
 			_FIELD_PARSE_MAP,\
-			(, name, (FOLDL(_COUNT, 0, __VA_ARGS__))),\
+			(, name, sizeof(_yajl_##name##_field_checks)),\
 			__VA_ARGS__)\
 		)\
 	}\
 	\
 	int yajl_parse_##name(char **inputptr, struct name *out) {\
 		FOLDL(_CLEAR_FOUND, , __VA_ARGS__)\
-		return _yajl_parse_struct(\
+		for (size_t i = 0; i < sizeof(_yajl_##name##_field_checks); ++i) {\
+			_yajl_##name##_field_checks[i] &= 0b110;\
+		}\
+		int r = _yajl_parse_struct(\
 			inputptr,\
 			out,\
 			_yajl_##name##_field_parsers,\
-			FOLDL(_COUNT, 0, __VA_ARGS__)\
+			sizeof(_yajl_##name##_field_checks)\
 		);\
+		if (r < 0)\
+			return -1;\
+		for (size_t i = 0; i < sizeof(_yajl_##name##_field_checks); ++i) {\
+			if (_yajl_##name##_field_checks[i] == 0b100)\
+				return -2;\
+		}\
+		\
+		return r;\
 	}\
 	\
 	int yajl_serialise_##name(CharStack *outputptr, struct name *in) {\
