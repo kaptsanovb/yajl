@@ -61,7 +61,7 @@ void yajl_free_string(char **x);
 #define EVAL256(...) EVAL128(EVAL128(__VA_ARGS__))
 #define EVAL512(...) EVAL256(EVAL256(__VA_ARGS__))
 #define EVAL1024(...) EVAL512(EVAL512(__VA_ARGS__))
-#define EVAL(...) EVAL8(__VA_ARGS__)
+#define EVAL(...) EVAL1024(__VA_ARGS__)
 
 #define FIRST(a, ...) a
 #define SECOND(a, b, ...) b
@@ -370,13 +370,16 @@ int _yajl_parse_struct(
 	\
 	CAT(__FIELD_SERIALISE_CLOSE_, is_optional)(field_name)
 
-#define _EXTEND(acc, name) acc _ADD_COMMA(acc) YAJL_FIELDS_##name
+#define YAJL_FIELDS_a ()
+#define _ALL_FIELDS(acc, def)\
+	(_UEF_EVAL acc _ADD_COMMA acc DEFER1(__ALL_FIELDS)(YAJL_FIELDS_##def)
+#define __ALL_FIELDS(extends, ...)\
+	__VA_ARGS__) _ADD_COMMA extends _UEF_EVAL extends
 
-#define YAJL_STRUCT_DEFS(name, extends)\
+#define YAJL_STRUCT_DEFS(name)\
 	_YAJL_STRUCT_DEFS(\
 		name,\
-		YAJL_FIELDS_##name,\
-		FOLDL(_EXTEND, , _UEF_EVAL extends)\
+		EVAL1(_UEF_EVAL FOLDL(_ALL_FIELDS, (), name, a))\
 	)
 
 #define _YAJL_STRUCT_DEFS(name, ...)\

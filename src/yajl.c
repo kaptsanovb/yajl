@@ -2,6 +2,7 @@
 #include <stddef.h>
 #include <limits.h>
 #include <float.h>
+#include <math.h>
 
 #include "yajl.h"
 
@@ -148,11 +149,10 @@ int char_stack_snprintf(CharStack *stack, size_t maxn, char *format, ...) {
 
 
 size_t max_len_int;
-size_t max_len_float;
+size_t max_len_float = FLT_DECIMAL_DIG + ceil(log10(FLT_MAX_10_EXP)) + 2;
 
 __attribute__((constructor)) void _yajl_init() {
 	max_len_int   = snprintf(NULL, 0, "%d", INT_MIN);
-	max_len_float = snprintf(NULL, 0, "%e", FLT_MIN);
 }
 
 // Primitives
