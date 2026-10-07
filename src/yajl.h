@@ -372,14 +372,14 @@ int _yajl_parse_struct(
 
 #define YAJL_FIELDS_EVIL_DO_NOT_USE_THIS ()
 #define _ALL_FIELDS(acc, def)\
-	(_UEF_EVAL acc _ADD_COMMA acc DEFER1(__ALL_FIELDS)(YAJL_FIELDS_##def)
+	(DEFER1(TAIL)(YAJL_FIELDS_##def) _ADD_COMMA acc _UEF_EVAL acc) DEFER1(__ALL_FIELDS)(YAJL_FIELDS_##def)
 #define __ALL_FIELDS(extends, ...)\
-	__VA_ARGS__) _ADD_COMMA extends _UEF_EVAL extends
+	_ADD_COMMA extends _UEF_EVAL extends
 
 #define YAJL_STRUCT_DEFS(name)\
 	_YAJL_STRUCT_DEFS(\
 		name,\
-		_UEF_EVAL FOLDL(_ALL_FIELDS, (), name, EVIL_DO_NOT_USE_THIS)\
+		EVAL1(TAIL FOLDL(_ALL_FIELDS, (), name, EVIL_DO_NOT_USE_THIS))\
 	)
 
 #define _YAJL_STRUCT_DEFS(name, ...)\
