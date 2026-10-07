@@ -370,7 +370,7 @@ int _yajl_parse_struct(
 	\
 	CAT(__FIELD_SERIALISE_CLOSE_, is_optional)(field_name)
 
-#define YAJL_FIELDS_a ()
+#define YAJL_FIELDS_EVIL_DO_NOT_USE_THIS ()
 #define _ALL_FIELDS(acc, def)\
 	(_UEF_EVAL acc _ADD_COMMA acc DEFER1(__ALL_FIELDS)(YAJL_FIELDS_##def)
 #define __ALL_FIELDS(extends, ...)\
@@ -379,7 +379,7 @@ int _yajl_parse_struct(
 #define YAJL_STRUCT_DEFS(name)\
 	_YAJL_STRUCT_DEFS(\
 		name,\
-		EVAL1(_UEF_EVAL FOLDL(_ALL_FIELDS, (), name, a))\
+		_UEF_EVAL FOLDL(_ALL_FIELDS, (), name, EVIL_DO_NOT_USE_THIS)\
 	)
 
 #define _YAJL_STRUCT_DEFS(name, ...)\
