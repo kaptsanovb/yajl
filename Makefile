@@ -1,11 +1,11 @@
-libyajl.a: bin/yajl.o
-	$(AR) rcs libyajl.a bin/yajl.o
+libyajl.a: out/yajl.o
+	$(AR) rcs libyajl.a out/yajl.o
 
-bin/yajl.o: bin src/yajl.c src/yajl.h
-	$(CC) -Wall -Wextra -c src/yajl.c -o bin/yajl.o
+out/yajl.o: out src/yajl.c include/yajl.h
+	$(CC) -Wall -Wextra -c src/yajl.c -o out/yajl.o
 
-bin:
-	mkdir bin
+out:
+	mkdir out
 
 clean:
-	rm -r bin libyajl.a
+	rm -r out libyajl.a

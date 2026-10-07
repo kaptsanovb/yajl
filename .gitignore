@@ -5,5 +5,7 @@
 !Makefile
 !src/
 !src/**
+!include/
+!include/**
 !lib/
 !lib/**

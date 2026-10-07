@@ -4,7 +4,7 @@
 #include <float.h>
 #include <math.h>
 
-#include "yajl.h"
+#include "../include/yajl.h"
 
 
 #define UNUSED(x) (void)(x)
