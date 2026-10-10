@@ -7,9 +7,6 @@
 #include "../include/yajl.h"
 
 
-#define UNUSED(x) (void)(x)
-
-
 unsigned int string_hash(char *s) {
 	unsigned int hash = 0;
 	for (int i = 0; s[i] != '\0'; ++i) {
@@ -383,7 +380,7 @@ int _yajl_parse_union(
 int _yajl_parse_struct(
 	char **inputptr,
 	void *out,
-	int (*field_parsers[])(char **, char *, int, void *),
+	int (*fields[])(char **, char *, int, void*),
 	size_t size
 ) {
 	char *start = *inputptr;
@@ -418,12 +415,12 @@ int _yajl_parse_struct(
 			return -4;
 
 		first = false;
-		while (field_parsers[n] == NULL) {
+		while (fields[n] == NULL) {
 			n = (n + 1) % size;
 			goto field_parser_select;
 		}
 
-		switch ((*field_parsers[n])(inputptr, s, n, out)) {
+		switch ((*fields[n])(inputptr, s, n, out)) {
 			case -1:
 				return -5;
 

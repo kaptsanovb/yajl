@@ -41,6 +41,8 @@ void yajl_free_bool  (bool        *x);
 void yajl_free_string(char **x);
 
 
+#define UNUSED(x) (void)(x)
+
 // Thank you johnathan heathcote: http://jhnet.co.uk/articles/cpp_magic
 
 #define EMPTY()
@@ -63,6 +65,19 @@ void yajl_free_string(char **x);
 #define EVAL1024(...) EVAL512(EVAL512(__VA_ARGS__))
 #define EVAL(...) EVAL1024(__VA_ARGS__)
 
+#define EVAL1_(...) __VA_ARGS__
+#define EVAL2_(...) EVAL1_(EVAL1_(__VA_ARGS__))
+#define EVAL4_(...) EVAL2_(EVAL2_(__VA_ARGS__))
+#define EVAL8_(...) EVAL4_(EVAL4_(__VA_ARGS__))
+#define EVAL16_(...) EVAL8_(EVAL8_(__VA_ARGS__))
+#define EVAL32_(...) EVAL16_(EVAL16_(__VA_ARGS__))
+#define EVAL64_(...) EVAL32_(EVAL32_(__VA_ARGS__))
+#define EVAL128_(...) EVAL64_(EVAL64_(__VA_ARGS__))
+#define EVAL256_(...) EVAL128_(EVAL128_(__VA_ARGS__))
+#define EVAL512_(...) EVAL256_(EVAL256_(__VA_ARGS__))
+#define EVAL1024_(...) EVAL512_(EVAL512_(__VA_ARGS__))
+#define EVAL_(...) EVAL1024_(__VA_ARGS__)
+
 #define FIRST(a, ...) a
 #define SECOND(a, b, ...) b
 #define TAIL(a, ...) __VA_ARGS__
@@ -74,6 +89,14 @@ void yajl_free_string(char **x);
 #define _FOLDL(m, acc, x, ...)\
 	__FST(__VA_OPT__(DEFER2(__FOLDL)()(m, m(acc, x), __VA_ARGS__), )m(acc,  x))
 #define __FOLDL() _FOLDL
+
+#define _FST_(a, ...) a
+#define __FST_(a, ...) a
+#define FOLDL_(m, acc, ...)\
+	EVAL_(_FST_(__VA_OPT__(_FOLDL_(m, acc, __VA_ARGS__), )acc))
+#define _FOLDL_(m, acc, x, ...)\
+	__FST_(__VA_OPT__(DEFER2(__FOLDL_)()(m, m(acc, x), __VA_ARGS__), )m(acc,  x))
+#define __FOLDL_() _FOLDL_
 
 
 int _yajl_parse_array(
@@ -252,18 +275,19 @@ unsigned int string_hash(char *s);
 int _yajl_parse_struct(
 	char **inputptr,
 	void *out,
-	int (*field_parsers[])(char **, char *, int, void *),
+	int (*fields[])(char **, char *, int, void*),
 	size_t size
 );
 
 #define _OPTIONAL_FIELD_YES(type, name) struct { bool found; type data; } name
 #define _OPTIONAL_FIELD_NO(type, name) type name
 #define _FIELD(acc, x) acc __FIELD x;
-#define __FIELD(type, name, optional)\
-	CAT(_OPTIONAL_FIELD_, optional)(type, name)
+#define __FIELD(type, name, is_optional, constraints)\
+	CAT(_OPTIONAL_FIELD_, is_optional)(type, name)
 
 #define _SND(a, b, ...) b
 #define _THD(a, b, c, ...) c
+#define _FRT(a, b, c, d, ...) d
 #define CAT(a, b) _CAT(a, b)
 #define _CAT(a, b) a##b
 #define STR(a) _STR(a)
@@ -272,7 +296,7 @@ int _yajl_parse_struct(
 #define _CLEAR_FOUND(acc, x) acc __CLEAR_FOUND x
 #define __CLEAR_FOUND_NO(field_name)
 #define __CLEAR_FOUND_YES(field_name) out->field_name.found = false;
-#define __CLEAR_FOUND(field_type, field_name, is_optional)\
+#define __CLEAR_FOUND(field_type, field_name, is_optional, constraints)\
 	CAT(__CLEAR_FOUND_, is_optional)(field_name)
 
 #define _FIELD_PARSE_MAP(acc, x)\
@@ -288,15 +312,15 @@ int _yajl_parse_struct(
 #define _OPTIONAL_BIT_YES 0b010 |
 #define __FIELD_PARSE_MAP(name, size, field_type, field_name, is_optional)\
 	n = string_hash(STR(field_name)) % size;\
-	while (CAT3(_yajl_, name, _field_parsers[n]) != NULL)\
+	while (CAT3(_yajl_, name, _fields[n]) != NULL)\
 		n = (n + 1) % size;\
-	CAT3(_yajl_, name, _field_parsers[n]) = (int (*)(char **, char *, int, void *))CAT4(_yajl_parse_, name, _, field_name);\
+	CAT3(_yajl_, name, _fields[n]) = (int (*)(char **, char *, int, void *))CAT4(_yajl_parse_, name, _, field_name);\
 	CAT3(_yajl_, name, _field_checks[n]) = CAT(_OPTIONAL_BIT_, is_optional) 0b100;
 
 #define _FIELD_PARSE(acc, x)\
 	(\
 		_UEF_FST acc\
-		__FIELD_PARSE(_SND acc, _UEF_FST x, _SND x, _THD x)\
+		__FIELD_PARSE(_SND acc, _UEF_FST x, _SND x, _THD x, _FRT x)\
 	,\
 		_SND acc\
 	)
@@ -304,19 +328,30 @@ int _yajl_parse_struct(
 #define _OPTIONAL_YES(field) field.data
 #define _OPTIONAL_FOUND_NO(field)
 #define _OPTIONAL_FOUND_YES(field) field.found = true;
-#define __FIELD_PARSE(name, field_type, field_name, is_optional)\
+
+#define _CONSTRAINT(acc, constraint) acc && __CONSTRAINT constraint
+#define __CONSTRAINT(type, value) __CONSTRAINT_##type(value)
+#define __CONSTRAINT_EQUAL(value) *data == value
+
+#define _FIELD_PARSE_CONSTRAINTS(...)\
+	FOLDL_(_CONSTRAINT, true, __VA_ARGS__)
+
+#define __FIELD_PARSE(name, field_type, field_name, is_optional, constraints)\
 	int CAT4(_yajl_parse_, name, _, field_name)(\
 		char **inputptr,\
 		char *field,\
 		int n,\
 		struct name *out\
 	) {\
+		field_type *data = &CAT(_OPTIONAL_, is_optional)(out->field_name);\
+		UNUSED(data);\
 		if (strcmp(field, STR(field_name)) == 0) {\
 			if (\
 				CAT(yajl_parse_, field_type)(\
 					inputptr,\
 					&CAT(_OPTIONAL_, is_optional)(out->field_name)\
 				) < 0\
+				|| !(_FIELD_PARSE_CONSTRAINTS constraints)\
 			)\
 				return -1;\
 			\
@@ -329,10 +364,10 @@ int _yajl_parse_struct(
 	}
 
 #define _FIELD_FREE(acc, x) acc CAT(__FIELD_FREE_, _THD x) x
-#define __FIELD_FREE_YES(field_type, field_name, optional)\
+#define __FIELD_FREE_YES(field_type, field_name, is_optional, constraints)\
 	if (x->field_name.found)\
 		yajl_free_##field_type(&x->field_name.data);
-#define __FIELD_FREE_NO(field_type, field_name, optional)\
+#define __FIELD_FREE_NO(field_type, field_name, is_optional, constraints)\
 	yajl_free_##field_type(&x->field_name);
 
 #define _ADD_COMMA(...)\
@@ -386,7 +421,7 @@ int _yajl_parse_struct(
 	typedef struct name { FOLDL(_FIELD, , __VA_ARGS__) } name;\
 	\
 	char _yajl_##name##_field_checks[FOLDL(_COUNT, 0, __VA_ARGS__)];\
-	int (*_yajl_##name##_field_parsers[sizeof(_yajl_##name##_field_checks)])(char **, char *, int, void *);\
+	int (*_yajl_##name##_fields[sizeof(_yajl_##name##_field_checks)])(char **, char *, int, void *);\
 	EVAL1(FIRST FOLDL(_FIELD_PARSE, (, name), __VA_ARGS__))\
 	__attribute__((constructor)) void _yajl_##name##_init() {\
 		int n;\
@@ -405,7 +440,7 @@ int _yajl_parse_struct(
 		int r = _yajl_parse_struct(\
 			inputptr,\
 			out,\
-			_yajl_##name##_field_parsers,\
+			_yajl_##name##_fields,\
 			sizeof(_yajl_##name##_field_checks)\
 		);\
 		if (r < 0)\
