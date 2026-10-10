@@ -330,10 +330,16 @@ int _yajl_parse_struct(
 #define _OPTIONAL_FOUND_NO(field)
 #define _OPTIONAL_FOUND_YES(field) field.found = true;
 
-#define _CONSTRAINT(acc, constraint) acc && __CONSTRAINT constraint
-#define __CONSTRAINT(m, value) m(value)
+#define _CONSTRAINT(acc, constraint) acc __CONSTRAINT constraint
+#define __CONSTRAINT(m, ...) m __VA_OPT__((__VA_ARGS__))
+#define OR   ||
+#define AND  &&
 #define EQUAL(value) *data == value
 #define STREQUAL(value) strcmp(*data, value) == 0
+
+#define _OPEN (
+#define _CLOSE )
+#define _CONSTRAINT_DEFAULT(...) (true __VA_OPT__(&& _OPEN) __VA_ARGS__ __VA_OPT__(_CLOSE))
 
 #define __FIELD_PARSE(name, field_type, field_name, is_optional, ...)\
 	int CAT4(_yajl_parse_, name, _, field_name)(\
@@ -350,7 +356,7 @@ int _yajl_parse_struct(
 					inputptr,\
 					&CAT(_OPTIONAL_, is_optional)(out->field_name)\
 				) < 0\
-				|| !(FOLDL_(_CONSTRAINT, true, __VA_ARGS__))\
+				|| !_CONSTRAINT_DEFAULT(FOLDL_(_CONSTRAINT, , __VA_ARGS__))\
 			)\
 				return -1;\
 			\
