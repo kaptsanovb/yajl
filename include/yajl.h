@@ -333,6 +333,7 @@ int _yajl_parse_struct(
 #define _CONSTRAINT(acc, constraint) acc && __CONSTRAINT constraint
 #define __CONSTRAINT(m, value) m(value)
 #define EQUAL(value) *data == value
+#define STREQUAL(value) strcmp(*data, value) == 0
 
 #define __FIELD_PARSE(name, field_type, field_name, is_optional, ...)\
 	int CAT4(_yajl_parse_, name, _, field_name)(\
