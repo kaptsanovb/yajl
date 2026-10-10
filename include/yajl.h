@@ -81,6 +81,7 @@ void yajl_free_string(char **x);
 #define FIRST(a, ...) a
 #define SECOND(a, b, ...) b
 #define TAIL(a, ...) __VA_ARGS__
+#define TAIL3(a, b, c, ...) __VA_ARGS__
 
 #define _FST(a, ...) a
 #define __FST(a, ...) a
@@ -282,7 +283,7 @@ int _yajl_parse_struct(
 #define _OPTIONAL_FIELD_YES(type, name) struct { bool found; type data; } name
 #define _OPTIONAL_FIELD_NO(type, name) type name
 #define _FIELD(acc, x) acc __FIELD x;
-#define __FIELD(type, name, is_optional, constraints)\
+#define __FIELD(type, name, is_optional, ...)\
 	CAT(_OPTIONAL_FIELD_, is_optional)(type, name)
 
 #define _SND(a, b, ...) b
@@ -296,7 +297,7 @@ int _yajl_parse_struct(
 #define _CLEAR_FOUND(acc, x) acc __CLEAR_FOUND x
 #define __CLEAR_FOUND_NO(field_name)
 #define __CLEAR_FOUND_YES(field_name) out->field_name.found = false;
-#define __CLEAR_FOUND(field_type, field_name, is_optional, constraints)\
+#define __CLEAR_FOUND(field_type, field_name, is_optional, ...)\
 	CAT(__CLEAR_FOUND_, is_optional)(field_name)
 
 #define _FIELD_PARSE_MAP(acc, x)\
@@ -320,7 +321,7 @@ int _yajl_parse_struct(
 #define _FIELD_PARSE(acc, x)\
 	(\
 		_UEF_FST acc\
-		__FIELD_PARSE(_SND acc, _UEF_FST x, _SND x, _THD x, _FRT x)\
+		__FIELD_PARSE(_SND acc, _UEF_FST x, _SND x, _THD x, TAIL3 x)\
 	,\
 		_SND acc\
 	)
@@ -330,13 +331,10 @@ int _yajl_parse_struct(
 #define _OPTIONAL_FOUND_YES(field) field.found = true;
 
 #define _CONSTRAINT(acc, constraint) acc && __CONSTRAINT constraint
-#define __CONSTRAINT(type, value) __CONSTRAINT_##type(value)
-#define __CONSTRAINT_EQUAL(value) *data == value
+#define __CONSTRAINT(m, value) m(value)
+#define EQUAL(value) *data == value
 
-#define _FIELD_PARSE_CONSTRAINTS(...)\
-	FOLDL_(_CONSTRAINT, true, __VA_ARGS__)
-
-#define __FIELD_PARSE(name, field_type, field_name, is_optional, constraints)\
+#define __FIELD_PARSE(name, field_type, field_name, is_optional, ...)\
 	int CAT4(_yajl_parse_, name, _, field_name)(\
 		char **inputptr,\
 		char *field,\
@@ -351,7 +349,7 @@ int _yajl_parse_struct(
 					inputptr,\
 					&CAT(_OPTIONAL_, is_optional)(out->field_name)\
 				) < 0\
-				|| !(_FIELD_PARSE_CONSTRAINTS constraints)\
+				|| !(FOLDL_(_CONSTRAINT, true, __VA_ARGS__))\
 			)\
 				return -1;\
 			\
@@ -364,10 +362,10 @@ int _yajl_parse_struct(
 	}
 
 #define _FIELD_FREE(acc, x) acc CAT(__FIELD_FREE_, _THD x) x
-#define __FIELD_FREE_YES(field_type, field_name, is_optional, constraints)\
+#define __FIELD_FREE_YES(field_type, field_name, is_optional, ...)\
 	if (x->field_name.found)\
 		yajl_free_##field_type(&x->field_name.data);
-#define __FIELD_FREE_NO(field_type, field_name, is_optional, constraints)\
+#define __FIELD_FREE_NO(field_type, field_name, is_optional, ...)\
 	yajl_free_##field_type(&x->field_name);
 
 #define _ADD_COMMA(...)\
